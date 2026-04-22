@@ -1,0 +1,13 @@
+{
+  "symbols": [
+    "BTC-USDT",
+    "ETH-USDT",
+    "SOL-USDT"
+  ],
+  "thresholds": {
+    "five_min_change_pct": 2.5,
+    "one_hour_change_pct": 5.0,
+    "volume_ratio": 2.0,
+    "atr_ratio_pct": 1.8
+  }
+}

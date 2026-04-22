@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "okx-monitor-free",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-04-22",
+  "observability": {
+    "enabled": true
+  }
+}
