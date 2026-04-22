@@ -15,13 +15,6 @@ function paragraph(text) {
   return [{ tag: "text", text }];
 }
 
-function rankIcon(rank) {
-  if (rank === 1) return "🥇";
-  if (rank === 2) return "🥈";
-  if (rank === 3) return "🥉";
-  return `🔹 ${rank}.`;
-}
-
 function signedPct(value) {
   const arrow = value >= 0 ? "▲" : "▼";
   return `${arrow}${Math.abs(value).toFixed(2)}%`;
@@ -65,36 +58,26 @@ function buildFeishuPayload(body) {
 
   const rankings = Array.isArray(body.rankings) ? body.rankings : [];
   for (const item of rankings) {
+    content.push(paragraph(`🔹 ${item.position}. ${item.symbol}`));
+    content.push(paragraph(`最新价🔥：${formatPrice(item.latest_price)}`));
     content.push(
       paragraph(
-        `${rankIcon(item.position)} ${item.name} (${item.symbol})  ·  市值榜#${item.market_cap_rank}`
+        `15分钟：${signedPct(item.change_15m_pct)}  /  1小时：${signedPct(item.change_1h_pct)}`
       )
     );
     content.push(
       paragraph(
-        `最新价🔥：${formatPrice(item.latest_price)} | 市值：${item.market_cap}`
+        `今日涨跌：${signedPct(item.change_24h_pct)}  /  本周涨跌：${signedPct(item.change_7d_pct)}`
       )
     );
+    content.push(paragraph(`本月涨跌：${signedPct(item.change_30d_pct)}`));
+    content.push(paragraph(`策略：${item.strategy}  /  结构：${item.bias}`));
     content.push(
       paragraph(
-        `15分钟：${signedPct(item.change_15m_pct)} / 1小时：${signedPct(item.change_1h_pct)}`
+        `资金费率：${item.funding_rate_pct.toFixed(4)}%  /  标记偏差：${item.mark_basis_pct.toFixed(2)}%`
       )
     );
-    content.push(
-      paragraph(
-        `今日涨跌：${signedPct(item.change_24h_pct)} / 本周涨跌：${signedPct(item.change_7d_pct)} / 本月涨跌：${signedPct(item.change_30d_pct)}`
-      )
-    );
-    content.push(
-      paragraph(
-        `策略：${item.strategy} | 结构：${item.bias} | 资金费率：${item.funding_rate_pct.toFixed(4)}%`
-      )
-    );
-    content.push(
-      paragraph(
-        `标记基差：${item.mark_basis_pct.toFixed(2)}% | 持仓量：${item.open_interest} | 置信度：${item.confidence}`
-      )
-    );
+    content.push(paragraph(`持仓量：${item.open_interest}  /  市值：${item.market_cap}`));
   }
 
   const flags = Array.isArray(body.flags) ? body.flags : [];
