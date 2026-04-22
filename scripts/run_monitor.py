@@ -327,6 +327,20 @@ def post_alert(endpoint: str, token: str | None, alert: dict) -> None:
         response.read()
 
 
+def format_delivery_error(endpoint: str, error: Exception) -> str:
+    parsed = urllib.parse.urlparse(endpoint)
+    location = f"{parsed.netloc}{parsed.path or '/'}"
+
+    if isinstance(error, urllib.error.HTTPError):
+        body = error.read().decode("utf-8", errors="ignore").strip()
+        if body:
+            body = body.replace("\n", " ")[:240]
+            return f"{location} -> HTTP {error.code}: {body}"
+        return f"{location} -> HTTP {error.code}"
+
+    return f"{location} -> {error}"
+
+
 def write_summary(
     summary_path: Path,
     sentiment: dict,
@@ -413,7 +427,9 @@ def main() -> int:
             try:
                 post_alert(endpoint, token, alert)
             except Exception as error:
-                delivery_errors.append(f"{alert['title']}: {error}")
+                delivery_errors.append(
+                    f"{alert['title']}: {format_delivery_error(endpoint, error)}"
+                )
 
     write_summary(args.summary_file, sentiment, reports, alerts, delivery_errors)
 
