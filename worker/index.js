@@ -11,18 +11,30 @@ function unauthorized() {
   return json({ ok: false, error: "Unauthorized" }, 401);
 }
 
-function textParagraph(text) {
+function paragraph(text) {
   return [{ tag: "text", text }];
 }
 
-function levelLabel(level) {
-  if (level === "warning") {
-    return "预警";
+function rankIcon(rank) {
+  if (rank === 1) return "🥇";
+  if (rank === 2) return "🥈";
+  if (rank === 3) return "🥉";
+  return `🔹 ${rank}.`;
+}
+
+function signedPct(value) {
+  const arrow = value >= 0 ? "▲" : "▼";
+  return `${arrow}${Math.abs(value).toFixed(2)}%`;
+}
+
+function formatPrice(value) {
+  if (value >= 1000) {
+    return value.toFixed(2);
   }
-  if (level === "error") {
-    return "风险";
+  if (value >= 1) {
+    return value.toFixed(4);
   }
-  return "摘要";
+  return value.toFixed(6);
 }
 
 async function sendFeishuAlert(webhook, payload) {
@@ -35,7 +47,6 @@ async function sendFeishuAlert(webhook, payload) {
   });
 
   const text = await response.text();
-
   if (!response.ok) {
     throw new Error(`Feishu webhook failed: ${response.status} ${text}`);
   }
@@ -44,56 +55,59 @@ async function sendFeishuAlert(webhook, payload) {
 }
 
 function buildFeishuPayload(body) {
-  const title = body.title || "OKX 合约监控";
-  const metrics =
-    body.metrics && typeof body.metrics === "object"
-      ? Object.entries(body.metrics)
-      : [];
-  const points = Array.isArray(body.points) ? body.points : [];
+  const title = body.title || "📊 OKX 合约市值榜观察";
   const content = [];
 
+  content.push(paragraph(body.headline || "今日趋势分析：主流币方向分化，等待确认。"));
+  content.push(paragraph(body.summary || ""));
+  content.push(paragraph(`🕒 观察周期：${body.interval_label || "15 分钟"}`));
+  content.push(paragraph("🏁 TOP 10 市值榜（OKX 永续）"));
+
+  const rankings = Array.isArray(body.rankings) ? body.rankings : [];
+  for (const item of rankings) {
+    content.push(
+      paragraph(
+        `${rankIcon(item.position)} ${item.name} (${item.symbol})  ·  市值榜#${item.market_cap_rank}`
+      )
+    );
+    content.push(
+      paragraph(
+        `最新价🔥：${formatPrice(item.latest_price)} | 市值：${item.market_cap}`
+      )
+    );
+    content.push(
+      paragraph(
+        `15分钟：${signedPct(item.change_15m_pct)} / 1小时：${signedPct(item.change_1h_pct)}`
+      )
+    );
+    content.push(
+      paragraph(
+        `今日涨跌：${signedPct(item.change_24h_pct)} / 本周涨跌：${signedPct(item.change_7d_pct)} / 本月涨跌：${signedPct(item.change_30d_pct)}`
+      )
+    );
+    content.push(
+      paragraph(
+        `策略：${item.strategy} | 结构：${item.bias} | 资金费率：${item.funding_rate_pct.toFixed(4)}%`
+      )
+    );
+    content.push(
+      paragraph(
+        `标记基差：${item.mark_basis_pct.toFixed(2)}% | 持仓量：${item.open_interest} | 置信度：${item.confidence}`
+      )
+    );
+  }
+
+  const flags = Array.isArray(body.flags) ? body.flags : [];
+  if (flags.length) {
+    content.push(paragraph("⚠️ 风险提示"));
+    for (const flag of flags) {
+      content.push(paragraph(`• ${flag}`));
+    }
+  }
+
   content.push(
-    textParagraph(
-      `【${levelLabel(body.level || "info")}】${body.source || "okx-monitor"}`
-    )
-  );
-
-  if (body.summary || body.message) {
-    content.push(textParagraph(body.summary || body.message));
-  }
-
-  if (body.symbol || body.strategy || body.confidence !== undefined) {
-    const parts = [];
-    if (body.symbol) {
-      parts.push(`合约：${body.symbol}`);
-    }
-    if (body.strategy) {
-      parts.push(`策略：${body.strategy}`);
-    }
-    if (body.confidence !== undefined) {
-      parts.push(`置信度：${body.confidence}`);
-    }
-    if (parts.length) {
-      content.push(textParagraph(parts.join(" | ")));
-    }
-  }
-
-  for (const [key, value] of metrics) {
-    content.push(textParagraph(`- ${key}：${value}`));
-  }
-
-  if (points.length) {
-    content.push(textParagraph("关注点："));
-    for (const point of points) {
-      content.push(textParagraph(`• ${point}`));
-    }
-  }
-
-  content.push(
-    textParagraph(
-      `时间：${new Date().toLocaleString("zh-CN", {
-        timeZone: "Asia/Shanghai"
-      })}`
+    paragraph(
+      `⏰ ${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`
     )
   );
 
@@ -146,10 +160,11 @@ export default {
         return json({ ok: false, error: "Request body must be JSON" }, 400);
       }
 
-      const payload = buildFeishuPayload(body);
-
       try {
-        const result = await sendFeishuAlert(env.FEISHU_WEBHOOK_URL, payload);
+        const result = await sendFeishuAlert(
+          env.FEISHU_WEBHOOK_URL,
+          buildFeishuPayload(body)
+        );
         return json({ ok: true, forwarded: true, feishu: result });
       } catch (error) {
         return json({ ok: false, error: error.message }, 502);
