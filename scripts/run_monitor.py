@@ -235,6 +235,10 @@ def explain_fear_greed(score: int) -> str:
     return "说明市场情绪已经偏热，注意冲高后的回撤风险。"
 
 
+def contains_any(text: str, keywords: list[str]) -> bool:
+    return any(keyword in text for keyword in keywords)
+
+
 def score_news_headline(headline: str) -> tuple[int, str]:
     lower = headline.lower()
 
@@ -351,6 +355,132 @@ def score_news_headline(headline: str) -> tuple[int, str]:
     return score, theme
 
 
+def is_market_wide_news(headline: str, score: int, theme: str) -> bool:
+    lower = headline.lower()
+    if score < 7 or theme == "行业动态":
+        return False
+
+    hard_reject_keywords = [
+        "justin sun",
+        "world liberty financial",
+        "certik",
+        "kraken",
+        "coinbase",
+        "binance",
+        "bybit",
+        "okx",
+        "aptos",
+        "solana mobile",
+        "wallet",
+        "nft",
+        "gaming",
+        "airdrops",
+        "token unlock",
+        "protocol",
+        "validator",
+        "lawsuit",
+        "sues",
+        "sued",
+        "frozen assets",
+        "performance update",
+        "earnings",
+        "series a",
+        "funding round",
+        "acquires",
+        "acquisition",
+        "partnership",
+        "launches",
+        "launch",
+    ]
+    if contains_any(lower, hard_reject_keywords):
+        return False
+
+    market_wide_keywords = [
+        "trump",
+        "fed",
+        "federal reserve",
+        "powell",
+        "cpi",
+        "inflation",
+        "rates",
+        "rate cut",
+        "rate hike",
+        "tariff",
+        "ceasefire",
+        "truce",
+        "war",
+        "iran",
+        "israel",
+        "sec",
+        "regulation",
+        "regulatory",
+        "bill",
+        "senate",
+        "house",
+        "approval",
+        "approved",
+        "etf",
+        "inflow",
+        "outflow",
+        "liquidation",
+        "selloff",
+        "sell-off",
+        "crash",
+        "attack",
+        "conflict",
+    ]
+    return contains_any(lower, market_wide_keywords)
+
+
+def translate_market_news(headline: str, theme: str) -> str:
+    lower = headline.lower()
+
+    if contains_any(lower, ["trump", "ceasefire", "truce", "iran", "israel"]):
+        if contains_any(lower, ["ceasefire", "truce"]):
+            return "特朗普或中东局势释放停火/缓和信号，地缘风险降温，利多加密市场整体风险偏好。"
+        if contains_any(lower, ["war", "attack", "conflict"]):
+            return "中东地缘冲突再度升温，市场避险情绪抬头，主流币更容易出现同步承压。"
+        return "特朗普与中东地缘消息扰动市场，需重点留意主流币是否出现联动放量。"
+
+    if contains_any(lower, ["fed", "federal reserve", "powell", "rate cut", "rate hike", "rates"]):
+        if contains_any(lower, ["cut", "easing", "cooling", "slowdown"]):
+            return "美联储宽松预期升温，风险资产定价改善，偏利多主流币。"
+        if contains_any(lower, ["hike", "higher for longer", "sticky inflation"]):
+            return "美联储偏鹰或高利率预期升温，风险资产承压，偏利空主流币。"
+        return "美联储表态影响风险偏好，主流币容易跟随宏观预期联动。"
+
+    if contains_any(lower, ["cpi", "inflation"]):
+        if contains_any(lower, ["cool", "eases", "ease", "lower"]):
+            return "通胀压力缓和，市场对流动性预期改善，偏利多加密市场。"
+        return "通胀数据扰动宏观预期，主流币可能随风险资产同步波动。"
+
+    if contains_any(lower, ["etf", "inflow", "institutional", "capital"]):
+        if contains_any(lower, ["outflow"]):
+            return "ETF或机构资金出现流出，主流币上行动能可能减弱。"
+        return "ETF或机构资金流入增强，偏利多主流币整体表现。"
+
+    if contains_any(lower, ["sec", "regulation", "regulatory", "bill", "senate", "house", "approval", "approved"]):
+        if contains_any(lower, ["ban", "crackdown", "delay"]):
+            return "监管扰动偏空，市场风险偏好可能降温，主流币更易同步回落。"
+        return "监管或政策预期改善，偏利多加密市场整体情绪。"
+
+    if contains_any(lower, ["liquidation", "selloff", "sell-off", "crash"]):
+        return "市场出现集中去杠杆或抛压信号，短线需防主流币同步回撤。"
+
+    if contains_any(lower, ["hack", "exploit", "attack", "conflict"]):
+        return "风险事件升温，容易压制市场情绪，主流币短线波动可能放大。"
+
+    if theme == "宏观/地缘":
+        return "宏观或地缘消息正在主导风险偏好，主流币更容易出现同涨同跌。"
+    if theme == "政策/监管":
+        return "政策或监管消息在影响市场预期，注意主流币是否继续联动。"
+    if theme == "资金/ETF":
+        return "资金面变化正在影响市场方向，主流币更容易出现一致性走势。"
+    if theme == "风险事件":
+        return "风险事件扰动升温，短线要防范主流币集体波动扩大。"
+    return "当前有全市场级消息扰动，需结合盘面确认联动方向。"
+
+
 def build_news_snapshot(headlines: list[str], limit: int) -> tuple[str, list[str]]:
     if not headlines:
         return (
@@ -364,7 +494,7 @@ def build_news_snapshot(headlines: list[str], limit: int) -> tuple[str, list[str
         ranked.append((score, index, theme, headline))
 
     ranked.sort(key=lambda item: (-item[0], item[1]))
-    meaningful = [item for item in ranked if item[0] >= 6 and item[2] != "行业动态"]
+    meaningful = [item for item in ranked if is_market_wide_news(item[3], item[0], item[2])]
     if not meaningful:
         return (
             "📰 消息面判断：当前暂无特别明确的宏观、监管或资金面事件在驱动全市场，先重点看盘面是否自行走趋势。",
@@ -372,10 +502,16 @@ def build_news_snapshot(headlines: list[str], limit: int) -> tuple[str, list[str
         )
 
     selected_group = meaningful[: min(limit, len(meaningful))]
-    selected = [item[3] for item in selected_group]
+    selected = []
+    seen = set()
+    for _, _, theme, headline in selected_group:
+        translated = translate_market_news(headline, theme)
+        if translated not in seen:
+            selected.append(translated)
+            seen.add(translated)
 
     theme_counts: dict[str, int] = {}
-    lower_joined = " ".join(selected).lower()
+    lower_joined = " ".join(item[3] for item in selected_group).lower()
     for _, _, theme, _ in selected_group:
         theme_counts[theme] = theme_counts.get(theme, 0) + 1
     dominant_theme = max(theme_counts, key=theme_counts.get)
