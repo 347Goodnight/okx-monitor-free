@@ -20,13 +20,15 @@ class Thresholds:
     one_hour_change_pct: float
     volume_ratio: float
     atr_ratio_pct: float
+    funding_rate_pct: float
+    mark_basis_pct: float
 
 
 def http_get_json(url: str) -> dict:
     request = urllib.request.Request(
         url,
         headers={
-            "User-Agent": "okx-monitor-free/0.1",
+            "User-Agent": "okx-monitor-free/0.2",
             "Accept": "application/json",
         },
     )
@@ -39,17 +41,19 @@ def okx_get(path: str, params: dict[str, str]) -> dict:
     return http_get_json(f"{OKX_BASE_URL}{path}?{query}")
 
 
+def okx_data(path: str, params: dict[str, str]) -> list[dict]:
+    payload = okx_get(path, params)
+    if payload.get("code") != "0":
+        raise RuntimeError(f"OKX request failed for {path}: {payload}")
+    return payload["data"]
+
+
 def get_candles(symbol: str, bar: str, limit: int) -> list[dict]:
-    payload = okx_get(
+    rows = []
+    for item in okx_data(
         "/api/v5/market/candles",
         {"instId": symbol, "bar": bar, "limit": str(limit)},
-    )
-
-    if payload.get("code") != "0":
-        raise RuntimeError(f"OKX candles error for {symbol}: {payload}")
-
-    rows = []
-    for item in payload["data"]:
+    ):
         rows.append(
             {
                 "ts": int(item[0]),
@@ -63,6 +67,27 @@ def get_candles(symbol: str, bar: str, limit: int) -> list[dict]:
 
     rows.sort(key=lambda row: row["ts"])
     return rows
+
+
+def get_mark_price(symbol: str) -> float:
+    data = okx_data(
+        "/api/v5/public/mark-price",
+        {"instType": "SWAP", "instId": symbol},
+    )
+    return float(data[0]["markPx"])
+
+
+def get_funding_rate(symbol: str) -> float:
+    data = okx_data("/api/v5/public/funding-rate", {"instId": symbol})
+    return float(data[0]["fundingRate"])
+
+
+def get_open_interest(symbol: str) -> float:
+    data = okx_data(
+        "/api/v5/public/open-interest",
+        {"instType": "SWAP", "instId": symbol},
+    )
+    return float(data[0]["oi"])
 
 
 def get_fear_greed_score() -> tuple[int, str]:
@@ -145,26 +170,60 @@ def classify_sentiment(score: int) -> str:
     return "极度贪婪"
 
 
+def classify_contract_setup(
+    price: float,
+    ema20: float,
+    ema60: float,
+    current_rsi: float,
+    atr_ratio_pct: float,
+    funding_rate_pct: float,
+    mark_basis_pct: float,
+) -> str:
+    if atr_ratio_pct >= 1.6 or abs(mark_basis_pct) >= 0.35:
+        return "高波动避险"
+    if price > ema20 > ema60 and current_rsi >= 55 and funding_rate_pct <= 0.05:
+        return "顺势轻仓多"
+    if price < ema20 < ema60 and current_rsi <= 45 and funding_rate_pct >= -0.05:
+        return "顺势轻仓空"
+    return "区间等待"
+
+
+def contract_bias(
+    one_hour_change_pct: float, funding_rate_pct: float, mark_basis_pct: float
+) -> str:
+    if one_hour_change_pct >= 1.2 and funding_rate_pct < 0.05:
+        return "多头偏强"
+    if one_hour_change_pct <= -1.2 and funding_rate_pct > -0.05:
+        return "空头偏强"
+    if abs(mark_basis_pct) >= 0.25:
+        return "基差偏离"
+    return "多空均衡"
+
+
 def confidence_from_metrics(
-    price: float, ema20: float, ema60: float, current_rsi: float
+    price: float,
+    ema20: float,
+    ema60: float,
+    current_rsi: float,
+    funding_rate_pct: float,
+    mark_basis_pct: float,
 ) -> int:
-    trend_score = min(abs(pct_change(ema20, ema60)), 5.0) * 12
-    price_score = min(abs(pct_change(price, ema20)), 5.0) * 8
-    rsi_score = abs(current_rsi - 50) * 0.8
-    score = int(min(100, trend_score + price_score + rsi_score))
+    trend_score = min(abs(pct_change(ema20, ema60)), 5.0) * 10
+    price_score = min(abs(pct_change(price, ema20)), 4.0) * 10
+    rsi_score = abs(current_rsi - 50) * 0.7
+    derivatives_score = min(abs(funding_rate_pct) * 8 + abs(mark_basis_pct) * 20, 20)
+    score = int(min(100, trend_score + price_score + rsi_score + derivatives_score))
     return max(score, 15)
 
 
-def infer_strategy(
-    price: float, ema20: float, ema60: float, current_rsi: float, atr_ratio_pct: float
-) -> str:
-    if atr_ratio_pct >= 2.2:
-        return "高风险观望"
-    if price > ema20 > ema60 and current_rsi >= 55:
-        return "趋势多"
-    if price < ema20 < ema60 and current_rsi <= 45:
-        return "趋势空"
-    return "震荡"
+def summarize_oi(oi: float) -> str:
+    if oi >= 1_000_000_000:
+        return f"{oi / 1_000_000_000:.2f}B"
+    if oi >= 1_000_000:
+        return f"{oi / 1_000_000:.2f}M"
+    if oi >= 1_000:
+        return f"{oi / 1_000:.2f}K"
+    return f"{oi:.2f}"
 
 
 def compute_symbol_report(symbol: str, thresholds: Thresholds) -> tuple[dict, list[dict]]:
@@ -192,21 +251,56 @@ def compute_symbol_report(symbol: str, thresholds: Thresholds) -> tuple[dict, li
     current_atr = atr(candles_5m[-30:], 14)
     atr_ratio_pct = (current_atr / latest_price) * 100 if latest_price else 0.0
 
+    mark_price = get_mark_price(symbol)
+    mark_basis_pct = pct_change(mark_price, latest_price)
+    funding_rate_pct = get_funding_rate(symbol) * 100
+    open_interest = get_open_interest(symbol)
+
     recent_high = max(row["high"] for row in candles_5m[-21:-1])
     recent_low = min(row["low"] for row in candles_5m[-21:-1])
     breakout = latest_price > recent_high
     breakdown = latest_price < recent_low
 
-    strategy = infer_strategy(latest_price, ema20, ema60, current_rsi, atr_ratio_pct)
-    confidence = confidence_from_metrics(latest_price, ema20, ema60, current_rsi)
+    strategy = classify_contract_setup(
+        latest_price,
+        ema20,
+        ema60,
+        current_rsi,
+        atr_ratio_pct,
+        funding_rate_pct,
+        mark_basis_pct,
+    )
+    confidence = confidence_from_metrics(
+        latest_price,
+        ema20,
+        ema60,
+        current_rsi,
+        funding_rate_pct,
+        mark_basis_pct,
+    )
+    bias = contract_bias(one_hour_change, funding_rate_pct, mark_basis_pct)
 
     alerts = []
     if abs(five_min_change) >= thresholds.five_min_change_pct:
         alerts.append(
             {
-                "title": f"{symbol} 5m 异动",
+                "title": f"{symbol} 5m 合约异动",
                 "level": "warning",
-                "message": f"5 分钟涨跌幅 {five_min_change:.2f}%，最新价 {latest_price:.4f}",
+                "summary": f"5 分钟涨跌幅 {five_min_change:.2f}%，短线波动放大。",
+                "symbol": symbol,
+                "strategy": strategy,
+                "confidence": confidence,
+                "metrics": {
+                    "最新价": f"{latest_price:.4f}",
+                    "5m涨跌": f"{five_min_change:.2f}%",
+                    "资金费率": f"{funding_rate_pct:.4f}%",
+                    "标记基差": f"{mark_basis_pct:.2f}%",
+                    "持仓量": summarize_oi(open_interest),
+                },
+                "points": [
+                    f"合约结构：{bias}",
+                    f"成交量放大：{volume_ratio:.2f}x",
+                ],
                 "source": "okx-monitor",
             }
         )
@@ -216,7 +310,18 @@ def compute_symbol_report(symbol: str, thresholds: Thresholds) -> tuple[dict, li
             {
                 "title": f"{symbol} 1h 趋势拉伸",
                 "level": "warning",
-                "message": f"1 小时涨跌幅 {one_hour_change:.2f}%，最新价 {latest_price:.4f}",
+                "summary": f"1 小时涨跌幅 {one_hour_change:.2f}%，趋势延续概率上升。",
+                "symbol": symbol,
+                "strategy": strategy,
+                "confidence": confidence,
+                "metrics": {
+                    "最新价": f"{latest_price:.4f}",
+                    "1h涨跌": f"{one_hour_change:.2f}%",
+                    "资金费率": f"{funding_rate_pct:.4f}%",
+                    "标记基差": f"{mark_basis_pct:.2f}%",
+                    "持仓量": summarize_oi(open_interest),
+                },
+                "points": [f"合约结构：{bias}"],
                 "source": "okx-monitor",
             }
         )
@@ -226,7 +331,17 @@ def compute_symbol_report(symbol: str, thresholds: Thresholds) -> tuple[dict, li
             {
                 "title": f"{symbol} 成交量放大",
                 "level": "info",
-                "message": f"5m 成交量放大 {volume_ratio:.2f}x，最新价 {latest_price:.4f}",
+                "summary": f"5 分钟成交量放大 {volume_ratio:.2f}x，盘口活跃度提升。",
+                "symbol": symbol,
+                "strategy": strategy,
+                "confidence": confidence,
+                "metrics": {
+                    "最新价": f"{latest_price:.4f}",
+                    "成交量倍数": f"{volume_ratio:.2f}x",
+                    "资金费率": f"{funding_rate_pct:.4f}%",
+                    "持仓量": summarize_oi(open_interest),
+                },
+                "points": [f"合约结构：{bias}"],
                 "source": "okx-monitor",
             }
         )
@@ -236,7 +351,57 @@ def compute_symbol_report(symbol: str, thresholds: Thresholds) -> tuple[dict, li
             {
                 "title": f"{symbol} 波动风险升高",
                 "level": "warning",
-                "message": f"ATR/Price={atr_ratio_pct:.2f}%，请注意波动放大",
+                "summary": f"ATR/Price={atr_ratio_pct:.2f}%，更适合降低杠杆观望。",
+                "symbol": symbol,
+                "strategy": strategy,
+                "confidence": confidence,
+                "metrics": {
+                    "最新价": f"{latest_price:.4f}",
+                    "波动率": f"{atr_ratio_pct:.2f}%",
+                    "资金费率": f"{funding_rate_pct:.4f}%",
+                    "标记基差": f"{mark_basis_pct:.2f}%",
+                },
+                "points": [f"合约结构：{bias}"],
+                "source": "okx-monitor",
+            }
+        )
+
+    if abs(funding_rate_pct) >= thresholds.funding_rate_pct:
+        alerts.append(
+            {
+                "title": f"{symbol} 资金费率偏热",
+                "level": "warning",
+                "summary": f"资金费率 {funding_rate_pct:.4f}%，情绪可能阶段性拥挤。",
+                "symbol": symbol,
+                "strategy": strategy,
+                "confidence": confidence,
+                "metrics": {
+                    "最新价": f"{latest_price:.4f}",
+                    "资金费率": f"{funding_rate_pct:.4f}%",
+                    "1h涨跌": f"{one_hour_change:.2f}%",
+                    "持仓量": summarize_oi(open_interest),
+                },
+                "points": [f"合约结构：{bias}"],
+                "source": "okx-monitor",
+            }
+        )
+
+    if abs(mark_basis_pct) >= thresholds.mark_basis_pct:
+        alerts.append(
+            {
+                "title": f"{symbol} 标记基差偏离",
+                "level": "warning",
+                "summary": f"标记价格偏离最新成交价 {mark_basis_pct:.2f}%，注意插针风险。",
+                "symbol": symbol,
+                "strategy": strategy,
+                "confidence": confidence,
+                "metrics": {
+                    "最新价": f"{latest_price:.4f}",
+                    "标记价格": f"{mark_price:.4f}",
+                    "标记基差": f"{mark_basis_pct:.2f}%",
+                    "资金费率": f"{funding_rate_pct:.4f}%",
+                },
+                "points": [f"合约结构：{bias}"],
                 "source": "okx-monitor",
             }
         )
@@ -246,7 +411,17 @@ def compute_symbol_report(symbol: str, thresholds: Thresholds) -> tuple[dict, li
             {
                 "title": f"{symbol} 向上突破",
                 "level": "info",
-                "message": f"价格 {latest_price:.4f} 突破近 20 根高点 {recent_high:.4f}",
+                "summary": f"价格突破近 20 根高点 {recent_high:.4f}。",
+                "symbol": symbol,
+                "strategy": strategy,
+                "confidence": confidence,
+                "metrics": {
+                    "最新价": f"{latest_price:.4f}",
+                    "20根高点": f"{recent_high:.4f}",
+                    "资金费率": f"{funding_rate_pct:.4f}%",
+                    "持仓量": summarize_oi(open_interest),
+                },
+                "points": [f"合约结构：{bias}"],
                 "source": "okx-monitor",
             }
         )
@@ -256,7 +431,17 @@ def compute_symbol_report(symbol: str, thresholds: Thresholds) -> tuple[dict, li
             {
                 "title": f"{symbol} 向下跌破",
                 "level": "warning",
-                "message": f"价格 {latest_price:.4f} 跌破近 20 根低点 {recent_low:.4f}",
+                "summary": f"价格跌破近 20 根低点 {recent_low:.4f}。",
+                "symbol": symbol,
+                "strategy": strategy,
+                "confidence": confidence,
+                "metrics": {
+                    "最新价": f"{latest_price:.4f}",
+                    "20根低点": f"{recent_low:.4f}",
+                    "资金费率": f"{funding_rate_pct:.4f}%",
+                    "持仓量": summarize_oi(open_interest),
+                },
+                "points": [f"合约结构：{bias}"],
                 "source": "okx-monitor",
             }
         )
@@ -267,10 +452,11 @@ def compute_symbol_report(symbol: str, thresholds: Thresholds) -> tuple[dict, li
             "price": latest_price,
             "five_min_change_pct": round(five_min_change, 2),
             "one_hour_change_pct": round(one_hour_change, 2),
-            "volume_ratio": round(volume_ratio, 2),
-            "rsi14": round(current_rsi, 2),
-            "atr_ratio_pct": round(atr_ratio_pct, 2),
+            "funding_rate_pct": round(funding_rate_pct, 4),
+            "mark_basis_pct": round(mark_basis_pct, 2),
+            "open_interest": summarize_oi(open_interest),
             "strategy": strategy,
+            "bias": bias,
             "confidence": confidence,
         },
         alerts,
@@ -287,18 +473,23 @@ def compute_market_sentiment(reports: list[dict], fear_greed_score: int) -> dict
             for report in reports[:2]
         ]
     )
-    momentum_component = mean(
-        [max(min((report["rsi14"] - 50) * 2 + 50, 100), 0) for report in reports[:2]]
-    )
-    volatility_penalty = mean(
-        [max(0, min(100, 100 - report["atr_ratio_pct"] * 20)) for report in reports[:2]]
+    derivatives_component = mean(
+        [
+            max(
+                0,
+                min(
+                    100,
+                    50 + report["funding_rate_pct"] * 300 - abs(report["mark_basis_pct"]) * 20,
+                ),
+            )
+            for report in reports[:2]
+        ]
     )
 
     score = int(
         round(
             trend_component * 0.3
-            + momentum_component * 0.2
-            + volatility_penalty * 0.2
+            + derivatives_component * 0.4
             + fear_greed_score * 0.3
         )
     )
@@ -357,21 +548,21 @@ def write_summary(
     delivery_errors: list[str],
 ) -> None:
     lines = [
-        "# OKX Monitor Summary",
+        "# OKX Futures Monitor Summary",
         "",
         f"- 市场情绪：**{sentiment['label']}** ({sentiment['score']}/100)",
         f"- 告警数量：**{len(alerts)}**",
         "",
-        "## 策略摘要",
+        "## 合约策略摘要",
         "",
-        "| 交易对 | 最新价 | 5m涨跌 | 1h涨跌 | 成交量倍数 | RSI14 | 波动率 | 结论 | 置信度 |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: |",
+        "| 合约 | 最新价 | 5m涨跌 | 1h涨跌 | 资金费率 | 标记基差 | 持仓量 | 策略 | 结构 | 置信度 |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- | ---: |",
     ]
 
     for report in reports:
         lines.append(
             "| {symbol} | {price:.4f} | {five_min_change_pct:.2f}% | {one_hour_change_pct:.2f}% | "
-            "{volume_ratio:.2f}x | {rsi14:.2f} | {atr_ratio_pct:.2f}% | {strategy} | {confidence} |".format(
+            "{funding_rate_pct:.4f}% | {mark_basis_pct:.2f}% | {open_interest} | {strategy} | {bias} | {confidence} |".format(
                 **report
             )
         )
@@ -379,7 +570,7 @@ def write_summary(
     if alerts:
         lines.extend(["", "## 当前触发的告警", ""])
         for alert in alerts:
-            lines.append(f"- `{alert['title']}`：{alert['message']}")
+            lines.append(f"- `{alert['title']}`：{alert['summary']}")
 
     if delivery_errors:
         lines.extend(["", "## 告警发送异常", ""])
@@ -416,12 +607,24 @@ def main() -> int:
     alerts.insert(
         0,
         {
-            "title": "市场情绪摘要",
+            "title": "OKX 合约市场摘要",
             "level": "info",
-            "message": (
-                f"情绪分 {sentiment['score']}/100，当前为 {sentiment['label']}；"
+            "summary": (
+                f"市场情绪 {sentiment['label']} {sentiment['score']}/100；"
                 f"Fear & Greed {fear_greed_score}（{fear_greed_label}）"
             ),
+            "metrics": {
+                "监控周期": "5 分钟",
+                "市场情绪": f"{sentiment['label']} ({sentiment['score']}/100)",
+                "Fear & Greed": f"{fear_greed_score} ({fear_greed_label})",
+            },
+            "points": [
+                (
+                    f"{report['symbol']} | {report['strategy']} | 1h {report['one_hour_change_pct']:.2f}% | "
+                    f"资金费率 {report['funding_rate_pct']:.4f}% | 基差 {report['mark_basis_pct']:.2f}%"
+                )
+                for report in reports
+            ],
             "source": "okx-monitor",
         },
     )

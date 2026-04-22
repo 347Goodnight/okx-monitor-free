@@ -11,6 +11,20 @@ function unauthorized() {
   return json({ ok: false, error: "Unauthorized" }, 401);
 }
 
+function textParagraph(text) {
+  return [{ tag: "text", text }];
+}
+
+function levelLabel(level) {
+  if (level === "warning") {
+    return "预警";
+  }
+  if (level === "error") {
+    return "风险";
+  }
+  return "摘要";
+}
+
 async function sendFeishuAlert(webhook, payload) {
   const response = await fetch(webhook, {
     method: "POST",
@@ -30,20 +44,68 @@ async function sendFeishuAlert(webhook, payload) {
 }
 
 function buildFeishuPayload(body) {
-  const title = body.title || "OKX 监控测试";
-  const lines = [
-    "OKX",
-    `标题：${title}`,
-    `级别：${body.level || "info"}`,
-    `内容：${body.message || "测试消息"}`,
-    `来源：${body.source || "cloudflare-worker"}`,
-    `时间：${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`
-  ];
+  const title = body.title || "OKX 合约监控";
+  const metrics =
+    body.metrics && typeof body.metrics === "object"
+      ? Object.entries(body.metrics)
+      : [];
+  const points = Array.isArray(body.points) ? body.points : [];
+  const content = [];
+
+  content.push(
+    textParagraph(
+      `【${levelLabel(body.level || "info")}】${body.source || "okx-monitor"}`
+    )
+  );
+
+  if (body.summary || body.message) {
+    content.push(textParagraph(body.summary || body.message));
+  }
+
+  if (body.symbol || body.strategy || body.confidence !== undefined) {
+    const parts = [];
+    if (body.symbol) {
+      parts.push(`合约：${body.symbol}`);
+    }
+    if (body.strategy) {
+      parts.push(`策略：${body.strategy}`);
+    }
+    if (body.confidence !== undefined) {
+      parts.push(`置信度：${body.confidence}`);
+    }
+    if (parts.length) {
+      content.push(textParagraph(parts.join(" | ")));
+    }
+  }
+
+  for (const [key, value] of metrics) {
+    content.push(textParagraph(`- ${key}：${value}`));
+  }
+
+  if (points.length) {
+    content.push(textParagraph("关注点："));
+    for (const point of points) {
+      content.push(textParagraph(`• ${point}`));
+    }
+  }
+
+  content.push(
+    textParagraph(
+      `时间：${new Date().toLocaleString("zh-CN", {
+        timeZone: "Asia/Shanghai"
+      })}`
+    )
+  );
 
   return {
-    msg_type: "text",
+    msg_type: "post",
     content: {
-      text: lines.join("\n")
+      post: {
+        zh_cn: {
+          title,
+          content
+        }
+      }
     }
   };
 }
