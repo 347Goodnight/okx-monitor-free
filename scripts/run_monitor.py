@@ -180,27 +180,10 @@ def get_candles(symbol: str, bar: str, limit: int) -> list[dict]:
     return rows
 
 
-def get_mark_price(symbol: str) -> float:
-    return float(
-        okx_data(
-            "/api/v5/public/mark-price",
-            {"instType": "SWAP", "instId": symbol},
-        )[0]["markPx"]
-    )
-
-
 def pct_change(current: float, reference: float) -> float:
     if reference == 0:
         return 0.0
     return ((current - reference) / reference) * 100
-
-
-def summarize_market_cap(market_cap: float) -> str:
-    if market_cap >= 1_000_000_000_000:
-        return f"${market_cap / 1_000_000_000_000:.2f}T"
-    if market_cap >= 1_000_000_000:
-        return f"${market_cap / 1_000_000_000:.2f}B"
-    return f"${market_cap / 1_000_000:.2f}M"
 
 
 def arrow(value: float) -> str:
@@ -229,13 +212,200 @@ def classify_contract_setup(change_15m_pct: float, change_1h_pct: float, change_
     return "👀 方向待确认"
 
 
+def translate_fear_greed_label(label: str) -> str:
+    mapping = {
+        "Extreme Fear": "😱 极度恐慌",
+        "Fear": "😟 恐慌",
+        "Neutral": "😐 中性",
+        "Greed": "🙂 贪婪",
+        "Extreme Greed": "🤯 极度贪婪",
+    }
+    return mapping.get(label, label)
+
+
+def explain_fear_greed(score: int) -> str:
+    if score <= 25:
+        return "说明场外资金明显偏谨慎，遇到利空时更容易放大波动。"
+    if score <= 45:
+        return "说明市场仍偏谨慎，追涨意愿不强。"
+    if score <= 55:
+        return "说明市场整体偏观望，需要消息面和盘面一起确认方向。"
+    if score <= 75:
+        return "说明市场风险偏好正在回升，顺势行情更容易延续。"
+    return "说明市场情绪已经偏热，注意冲高后的回撤风险。"
+
+
+def score_news_headline(headline: str) -> tuple[int, str]:
+    lower = headline.lower()
+
+    macro_keywords = [
+        "trump",
+        "fed",
+        "federal reserve",
+        "powell",
+        "cpi",
+        "inflation",
+        "tariff",
+        "war",
+        "ceasefire",
+        "truce",
+        "iran",
+        "israel",
+        "geopolitical",
+        "treasury",
+        "rates",
+        "rate cut",
+    ]
+    policy_keywords = [
+        "sec",
+        "regulation",
+        "regulatory",
+        "lawmakers",
+        "bill",
+        "senate",
+        "house",
+        "ban",
+        "approval",
+        "approve",
+        "approved",
+    ]
+    fund_flow_keywords = [
+        "etf",
+        "inflow",
+        "outflow",
+        "treasury reserve",
+        "buyback",
+        "capital",
+        "institutional",
+    ]
+    risk_keywords = [
+        "hack",
+        "exploit",
+        "liquidation",
+        "sell-off",
+        "selloff",
+        "lawsuit",
+        "crash",
+        "tension",
+        "attack",
+        "conflict",
+        "default",
+    ]
+    positive_keywords = [
+        "ceasefire",
+        "truce",
+        "approval",
+        "approved",
+        "inflow",
+        "surge",
+        "rally",
+        "gain",
+        "record high",
+        "optimism",
+        "easing",
+        "support",
+        "bullish",
+    ]
+    negative_keywords = [
+        "war",
+        "tariff",
+        "hack",
+        "exploit",
+        "outflow",
+        "selloff",
+        "sell-off",
+        "lawsuit",
+        "liquidation",
+        "attack",
+        "conflict",
+        "ban",
+        "crackdown",
+        "delay",
+        "fear",
+        "slump",
+        "drop",
+        "fall",
+    ]
+
+    score = 0
+    theme = "行业动态"
+    if any(keyword in lower for keyword in macro_keywords):
+        score += 6
+        theme = "宏观/地缘"
+    if any(keyword in lower for keyword in policy_keywords):
+        score += 4
+        theme = "政策/监管" if theme == "行业动态" else theme
+    if any(keyword in lower for keyword in fund_flow_keywords):
+        score += 4
+        theme = "资金/ETF" if theme == "行业动态" else theme
+    if any(keyword in lower for keyword in risk_keywords):
+        score += 4
+        theme = "风险事件" if theme == "行业动态" else theme
+    if "bitcoin" in lower or "crypto" in lower or "market" in lower:
+        score += 1
+
+    positive_hits = sum(keyword in lower for keyword in positive_keywords)
+    negative_hits = sum(keyword in lower for keyword in negative_keywords)
+    score += positive_hits + negative_hits
+
+    return score, theme
+
+
+def build_news_snapshot(headlines: list[str], limit: int) -> tuple[str, list[str]]:
+    if not headlines:
+        return (
+            "📰 消息面判断：暂未捕捉到足以带动全市场联动的明确事件，先以盘面走势为主。",
+            [],
+        )
+
+    ranked = []
+    for index, headline in enumerate(headlines):
+        score, theme = score_news_headline(headline)
+        ranked.append((score, index, theme, headline))
+
+    ranked.sort(key=lambda item: (-item[0], item[1]))
+    meaningful = [item for item in ranked if item[0] >= 6 and item[2] != "行业动态"]
+    if not meaningful:
+        return (
+            "📰 消息面判断：当前暂无特别明确的宏观、监管或资金面事件在驱动全市场，先重点看盘面是否自行走趋势。",
+            [],
+        )
+
+    selected_group = meaningful[: min(limit, len(meaningful))]
+    selected = [item[3] for item in selected_group]
+
+    theme_counts: dict[str, int] = {}
+    lower_joined = " ".join(selected).lower()
+    for _, _, theme, _ in selected_group:
+        theme_counts[theme] = theme_counts.get(theme, 0) + 1
+    dominant_theme = max(theme_counts, key=theme_counts.get)
+
+    positive_keywords = ["ceasefire", "truce", "approval", "approved", "inflow", "surge", "rally", "optimism", "easing", "bullish"]
+    negative_keywords = ["war", "tariff", "hack", "exploit", "outflow", "selloff", "sell-off", "lawsuit", "liquidation", "attack", "conflict", "ban", "crackdown", "fear"]
+    positive_hits = sum(keyword in lower_joined for keyword in positive_keywords)
+    negative_hits = sum(keyword in lower_joined for keyword in negative_keywords)
+
+    if positive_hits > negative_hits:
+        direction = "偏利多"
+        impact = "更容易带动主流币同步走强"
+    elif negative_hits > positive_hits:
+        direction = "偏利空"
+        impact = "更容易放大全市场回撤"
+    else:
+        direction = "影响中性"
+        impact = "是否形成联动还要看盘面是否继续共振"
+
+    return (
+        f"📰 消息面判断：当前更像{dominant_theme}驱动，整体{direction}，{impact}。",
+        selected,
+    )
+
+
 def build_symbol_report(coin: dict, thresholds: Thresholds) -> tuple[dict, list[str]]:
     swap_symbol = coin["swap_symbol"]
     candles_15m = get_candles(swap_symbol, "15m", 2)
     latest_price = candles_15m[-1]["close"]
     change_15m_pct = pct_change(candles_15m[-1]["close"], candles_15m[-2]["close"])
-    mark_price = get_mark_price(swap_symbol)
-    mark_basis_pct = pct_change(mark_price, latest_price)
 
     strategy = classify_contract_setup(
         change_15m_pct,
@@ -246,14 +416,12 @@ def build_symbol_report(coin: dict, thresholds: Thresholds) -> tuple[dict, list[
     report = {
         "position": coin["position"],
         "symbol": coin["symbol"],
-        "market_cap": summarize_market_cap(coin["market_cap"]),
         "latest_price": latest_price,
         "change_15m_pct": change_15m_pct,
         "change_1h_pct": coin["change_1h_pct"],
         "change_24h_pct": coin["change_24h_pct"],
         "change_7d_pct": coin["change_7d_pct"],
         "change_30d_pct": coin["change_30d_pct"],
-        "mark_basis_pct": mark_basis_pct,
         "strategy": strategy,
     }
 
@@ -266,8 +434,6 @@ def build_symbol_report(coin: dict, thresholds: Thresholds) -> tuple[dict, list[
         flags.append(f"🌋 {coin['symbol']} 日内波动较大 {signed_pct(coin['change_24h_pct'])}")
     if abs(coin["change_7d_pct"]) >= thresholds.weekly_change_pct:
         flags.append(f"📅 {coin['symbol']} 周线趋势显著 {signed_pct(coin['change_7d_pct'])}")
-    if abs(mark_basis_pct) >= 0.25:
-        flags.append(f"⚠️ {coin['symbol']} 标记偏差较大 {mark_basis_pct:.2f}%")
 
     return report, flags
 
@@ -315,16 +481,21 @@ def build_market_digest(
     else:
         trend = "🧭 主流币分化明显，先看方向确认。"
 
+    news_summary, selected_headlines = build_news_snapshot(headlines, 3)
+    external_sentiment_label = translate_fear_greed_label(fear_greed_label)
+
     return {
         "title": "📊 OKX 合约市值榜观察",
         "headline": f"今日趋势分析：{trend}",
-        "summary": (
-            f"综合市场情绪：{sentiment['label']} {sentiment['score']}/100；"
-            f"外部情绪指标 Fear & Greed：{fear_greed_score}（{fear_greed_label}）"
+        "summary": f"综合市场情绪：{sentiment['label']}（{sentiment['score']}/100）",
+        "external_sentiment": (
+            f"外部情绪温度：{external_sentiment_label}（{fear_greed_score}/100），"
+            f"{explain_fear_greed(fear_greed_score)}"
         ),
+        "news_summary": news_summary,
         "rankings": reports,
         "flags": flags[:8],
-        "news": headlines,
+        "news": selected_headlines,
         "interval_label": "15 分钟",
     }
 
@@ -373,14 +544,26 @@ def write_summary(
         "# OKX Futures Market Cap Digest",
         "",
         f"- 综合市场情绪：**{sentiment['label']}** ({sentiment['score']}/100)",
+        f"- {digest['external_sentiment']}",
         f"- 榜单范围：**TOP {len(reports)} 市值币（OKX 永续）**",
         f"- 观察周期：**15 分钟**",
         "",
         f"## {digest['headline']}",
         "",
+    ]
+
+    if digest["news_summary"] or digest["news"]:
+        lines.extend(["## 消息面快照", ""])
+        if digest["news_summary"]:
+            lines.append(f"- {digest['news_summary']}")
+        for headline in digest["news"]:
+            lines.append(f"- {headline}")
+        lines.extend(["", "## TOP 10 市值榜（OKX 永续）", ""])
+
+    lines.extend([
         "| 排名 | 币种 | 最新价 | 15分钟 | 1小时 | 今日涨跌 | 本周涨跌 | 本月涨跌 | 策略 |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
-    ]
+    ])
 
     for report in reports:
         lines.append(
@@ -396,11 +579,6 @@ def write_summary(
                 strategy=report["strategy"],
             )
         )
-
-    if digest["news"]:
-        lines.extend(["", "## 消息面快照", ""])
-        for headline in digest["news"]:
-            lines.append(f"- {headline}")
 
     if digest["flags"]:
         lines.extend(["", "## 风险提示", ""])
@@ -438,7 +616,7 @@ def main() -> int:
 
     fear_greed_score, fear_greed_label = get_fear_greed_score()
     sentiment = compute_market_sentiment(reports, fear_greed_score)
-    headlines = get_news_headlines(config.news_headlines)
+    headlines = get_news_headlines(max(config.news_headlines * 6, 18))
     digest = build_market_digest(
         reports,
         sentiment,

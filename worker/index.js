@@ -52,30 +52,40 @@ function buildFeishuPayload(body) {
   const content = [];
 
   content.push(paragraph(body.headline || "今日趋势分析：🧭 主流币分化明显，先看方向确认。"));
-  content.push(paragraph(body.summary || ""));
+  if (body.summary) {
+    content.push(paragraph(`🌡️ ${body.summary}`));
+  }
+  if (body.external_sentiment) {
+    content.push(paragraph(`🔎 ${body.external_sentiment}`));
+  }
   content.push(paragraph(`🕒 观察周期：${body.interval_label || "15 分钟"}`));
+
+  content.push(paragraph("📰 消息面快照"));
+  if (body.news_summary) {
+    content.push(paragraph(body.news_summary));
+  }
+
+  const news = Array.isArray(body.news) ? body.news : [];
+  if (news.length) {
+    for (const headline of news) {
+      content.push(paragraph(`• ${headline}`));
+    }
+  } else {
+    content.push(paragraph("• 暂未捕捉到明确的全市场驱动事件。"));
+  }
+
   content.push(paragraph("🏁 TOP 10 市值榜（OKX 永续）"));
 
   const rankings = Array.isArray(body.rankings) ? body.rankings : [];
   for (const item of rankings) {
     content.push(paragraph(`🔹 ${item.position}. ${item.symbol}`));
     content.push(paragraph(`最新价🔥：${formatPrice(item.latest_price)}`));
-    content.push(
-      paragraph(`15分钟：${signedPct(item.change_15m_pct)}  /  1小时：${signedPct(item.change_1h_pct)}`)
-    );
-    content.push(
-      paragraph(`今日涨跌：${signedPct(item.change_24h_pct)}  /  本周涨跌：${signedPct(item.change_7d_pct)}`)
-    );
+    content.push(paragraph(`15分钟：${signedPct(item.change_15m_pct)}`));
+    content.push(paragraph(`1小时：${signedPct(item.change_1h_pct)}`));
+    content.push(paragraph(`今日涨跌：${signedPct(item.change_24h_pct)}`));
+    content.push(paragraph(`本周涨跌：${signedPct(item.change_7d_pct)}`));
     content.push(paragraph(`本月涨跌：${signedPct(item.change_30d_pct)}`));
     content.push(paragraph(`策略：${item.strategy}`));
-  }
-
-  const news = Array.isArray(body.news) ? body.news : [];
-  if (news.length) {
-    content.push(paragraph("📰 消息面快照"));
-    for (const headline of news) {
-      content.push(paragraph(`• ${headline}`));
-    }
   }
 
   const flags = Array.isArray(body.flags) ? body.flags : [];
