@@ -2,6 +2,7 @@
   "market_cap_top_n": 10,
   "candidate_pool": 25,
   "quote": "USDT",
+  "news_headlines": 3,
   "exclude_symbols": [
     "USDT",
     "USDC",
@@ -16,8 +17,6 @@
     "change_15m_pct": 1.2,
     "hourly_change_pct": 2.5,
     "daily_change_pct": 5.0,
-    "weekly_change_pct": 12.0,
-    "funding_rate_pct": 0.03,
-    "mark_basis_pct": 0.25
+    "weekly_change_pct": 12.0
   }
 }

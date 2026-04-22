@@ -51,7 +51,7 @@ function buildFeishuPayload(body) {
   const title = body.title || "📊 OKX 合约市值榜观察";
   const content = [];
 
-  content.push(paragraph(body.headline || "今日趋势分析：主流币方向分化，等待确认。"));
+  content.push(paragraph(body.headline || "今日趋势分析：🧭 主流币分化明显，先看方向确认。"));
   content.push(paragraph(body.summary || ""));
   content.push(paragraph(`🕒 观察周期：${body.interval_label || "15 分钟"}`));
   content.push(paragraph("🏁 TOP 10 市值榜（OKX 永续）"));
@@ -61,23 +61,21 @@ function buildFeishuPayload(body) {
     content.push(paragraph(`🔹 ${item.position}. ${item.symbol}`));
     content.push(paragraph(`最新价🔥：${formatPrice(item.latest_price)}`));
     content.push(
-      paragraph(
-        `15分钟：${signedPct(item.change_15m_pct)}  /  1小时：${signedPct(item.change_1h_pct)}`
-      )
+      paragraph(`15分钟：${signedPct(item.change_15m_pct)}  /  1小时：${signedPct(item.change_1h_pct)}`)
     );
     content.push(
-      paragraph(
-        `今日涨跌：${signedPct(item.change_24h_pct)}  /  本周涨跌：${signedPct(item.change_7d_pct)}`
-      )
+      paragraph(`今日涨跌：${signedPct(item.change_24h_pct)}  /  本周涨跌：${signedPct(item.change_7d_pct)}`)
     );
     content.push(paragraph(`本月涨跌：${signedPct(item.change_30d_pct)}`));
-    content.push(paragraph(`策略：${item.strategy}  /  结构：${item.bias}`));
-    content.push(
-      paragraph(
-        `资金费率：${item.funding_rate_pct.toFixed(4)}%  /  标记偏差：${item.mark_basis_pct.toFixed(2)}%`
-      )
-    );
-    content.push(paragraph(`持仓量：${item.open_interest}  /  市值：${item.market_cap}`));
+    content.push(paragraph(`策略：${item.strategy}`));
+  }
+
+  const news = Array.isArray(body.news) ? body.news : [];
+  if (news.length) {
+    content.push(paragraph("📰 消息面快照"));
+    for (const headline of news) {
+      content.push(paragraph(`• ${headline}`));
+    }
   }
 
   const flags = Array.isArray(body.flags) ? body.flags : [];
