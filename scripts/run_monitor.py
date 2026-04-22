@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import os
-import statistics
 import sys
 import urllib.error
 import urllib.parse
@@ -48,7 +46,7 @@ def get_candles(symbol: str, bar: str, limit: int) -> list[dict]:
     )
 
     if payload.get("code") != "0":
-      raise RuntimeError(f"OKX candles error for {symbol}: {payload}")
+        raise RuntimeError(f"OKX candles error for {symbol}: {payload}")
 
     rows = []
     for item in payload["data"]:
@@ -80,6 +78,7 @@ def mean(values: list[float]) -> float:
 def ema(values: list[float], period: int) -> float:
     if not values:
         return 0.0
+
     multiplier = 2 / (period + 1)
     result = values[0]
     for value in values[1:]:
@@ -146,7 +145,9 @@ def classify_sentiment(score: int) -> str:
     return "极度贪婪"
 
 
-def confidence_from_metrics(price: float, ema20: float, ema60: float, current_rsi: float) -> int:
+def confidence_from_metrics(
+    price: float, ema20: float, ema60: float, current_rsi: float
+) -> int:
     trend_score = min(abs(pct_change(ema20, ema60)), 5.0) * 12
     price_score = min(abs(pct_change(price, ema20)), 5.0) * 8
     rsi_score = abs(current_rsi - 50) * 0.8
@@ -154,7 +155,9 @@ def confidence_from_metrics(price: float, ema20: float, ema60: float, current_rs
     return max(score, 15)
 
 
-def infer_strategy(price: float, ema20: float, ema60: float, current_rsi: float, atr_ratio_pct: float) -> str:
+def infer_strategy(
+    price: float, ema20: float, ema60: float, current_rsi: float, atr_ratio_pct: float
+) -> str:
     if atr_ratio_pct >= 2.2:
         return "高风险观望"
     if price > ema20 > ema60 and current_rsi >= 55:
@@ -174,7 +177,9 @@ def compute_symbol_report(symbol: str, thresholds: Thresholds) -> tuple[dict, li
     latest_price = last["close"]
     five_min_change = pct_change(last["close"], previous["close"])
 
-    one_hour_reference = candles_5m[-13]["close"] if len(candles_5m) >= 13 else candles_1h[-2]["close"]
+    one_hour_reference = (
+        candles_5m[-13]["close"] if len(candles_5m) >= 13 else candles_1h[-2]["close"]
+    )
     one_hour_change = pct_change(latest_price, one_hour_reference)
 
     latest_volume = last["volume"]
@@ -322,7 +327,13 @@ def post_alert(endpoint: str, token: str | None, alert: dict) -> None:
         response.read()
 
 
-def write_summary(summary_path: Path, sentiment: dict, reports: list[dict], alerts: list[dict]) -> None:
+def write_summary(
+    summary_path: Path,
+    sentiment: dict,
+    reports: list[dict],
+    alerts: list[dict],
+    delivery_errors: list[str],
+) -> None:
     lines = [
         "# OKX Monitor Summary",
         "",
@@ -348,10 +359,18 @@ def write_summary(summary_path: Path, sentiment: dict, reports: list[dict], aler
         for alert in alerts:
             lines.append(f"- `{alert['title']}`：{alert['message']}")
 
+    if delivery_errors:
+        lines.extend(["", "## 告警发送异常", ""])
+        for error in delivery_errors:
+            lines.append(f"- {error}")
+
     summary_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     github_step_summary = os.getenv("GITHUB_STEP_SUMMARY")
     if github_step_summary:
-        Path(github_step_summary).write_text(summary_path.read_text(encoding="utf-8"), encoding="utf-8")
+        Path(github_step_summary).write_text(
+            summary_path.read_text(encoding="utf-8"),
+            encoding="utf-8",
+        )
 
 
 def main() -> int:
@@ -377,18 +396,32 @@ def main() -> int:
         {
             "title": "市场情绪摘要",
             "level": "info",
-            "message": f"情绪分 {sentiment['score']}/100，当前为 {sentiment['label']}；Fear & Greed {fear_greed_score}（{fear_greed_label}）",
+            "message": (
+                f"情绪分 {sentiment['score']}/100，当前为 {sentiment['label']}；"
+                f"Fear & Greed {fear_greed_score}（{fear_greed_label}）"
+            ),
             "source": "okx-monitor",
         },
     )
 
     endpoint = os.getenv("ALERT_ENDPOINT")
     token = os.getenv("ALERT_TOKEN")
+    delivery_errors = []
+
     if endpoint:
         for alert in alerts:
-            post_alert(endpoint, token, alert)
+            try:
+                post_alert(endpoint, token, alert)
+            except Exception as error:
+                delivery_errors.append(f"{alert['title']}: {error}")
 
-    write_summary(args.summary_file, sentiment, reports, alerts)
+    write_summary(args.summary_file, sentiment, reports, alerts, delivery_errors)
+
+    if delivery_errors:
+        print("Alert delivery errors detected:", file=sys.stderr)
+        for error in delivery_errors:
+            print(f"- {error}", file=sys.stderr)
+
     return 0
 
 
