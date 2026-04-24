@@ -430,6 +430,11 @@ def parse_odaily_newsflash_source(source: NewsSourceConfig, limit: int) -> list[
                 if len(items) >= limit:
                     return items
 
+    # Prefer the structured JSON-LD feed when available.
+    # It gives us stable titles/links and avoids regex summary/title misalignment.
+    if items:
+        return items[:limit]
+
     for match in ODAILY_PATTERN.finditer(html_text):
         title = clean_headline(match.group("title"))
         if not title:
