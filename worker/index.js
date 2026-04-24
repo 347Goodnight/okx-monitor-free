@@ -51,8 +51,13 @@ function sourceLabel(name) {
 }
 
 function signedPct(value) {
-  const arrow = value >= 0 ? "▲" : "▼";
-  return `${arrow}${Math.abs(value).toFixed(2)}%`;
+  if (value > 0) {
+    return `🟢 +${Math.abs(value).toFixed(2)}%`;
+  }
+  if (value < 0) {
+    return `🔴 -${Math.abs(value).toFixed(2)}%`;
+  }
+  return `⚪ 0.00%`;
 }
 
 function formatPrice(value) {
@@ -67,7 +72,7 @@ function formatPrice(value) {
 
 function compactRankingLine(item) {
   return [
-    `${item.position}. ${item.symbol} ${formatPrice(item.latest_price)}`,
+    `🔹 ${item.position}. ${item.symbol} ${formatPrice(item.latest_price)}`,
     `15m ${signedPct(item.change_15m_pct)}`,
     `1h ${signedPct(item.change_1h_pct)}`,
     `24h ${signedPct(item.change_24h_pct)}`,
@@ -130,10 +135,6 @@ function buildFeishuPayload(body) {
   if (externalSentiment) {
     content.push(paragraph(`🌍 外部情绪：${externalSentiment}`));
   }
-  const scanInterval = body.scan_interval_label || body.interval_label || "15 分钟轮询";
-  const analysisFramework = body.analysis_framework || "15m 快照 + 1h/24h/7d/30d 对照";
-  content.push(paragraph(`⏱️ 更新频率：${scanInterval}`));
-  content.push(paragraph(`🧩 分析框架：${analysisFramework}`));
 
   content.push(paragraph("📰 消息面主驱动"));
   if (newsSummary) {
