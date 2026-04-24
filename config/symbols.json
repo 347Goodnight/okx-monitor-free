@@ -2,7 +2,91 @@
   "market_cap_top_n": 10,
   "candidate_pool": 25,
   "quote": "USDT",
-  "news_headlines": 3,
+  "news_headlines": 4,
+  "news_fetch_limit_per_source": 12,
+  "news_sources": [
+    {
+      "name": "Wu Blockchain",
+      "kind": "rss",
+      "url": "https://www.wublock123.com/feed",
+      "language": "zh",
+      "weight": 5,
+      "role": "headline",
+      "enabled": true,
+      "timeout_sec": 20
+    },
+    {
+      "name": "CoinDesk",
+      "kind": "rss",
+      "url": "https://www.coindesk.com/arc/outboundfeeds/rss/",
+      "language": "en",
+      "weight": 2,
+      "role": "headline",
+      "enabled": true,
+      "timeout_sec": 20
+    },
+    {
+      "name": "Odaily Newsflash",
+      "kind": "odaily_newsflash_html",
+      "url": "https://www.odaily.news/zh-CN/newsflash",
+      "language": "zh",
+      "weight": 4,
+      "role": "headline",
+      "enabled": true,
+      "timeout_sec": 20
+    },
+    {
+      "name": "ChainCatcher",
+      "kind": "chaincatcher_nuxt",
+      "url": "https://www.chaincatcher.com/news",
+      "language": "zh",
+      "weight": 4,
+      "role": "headline",
+      "enabled": true,
+      "timeout_sec": 20
+    },
+    {
+      "name": "Fed",
+      "kind": "rss",
+      "url": "https://www.federalreserve.gov/feeds/press_all.xml",
+      "language": "en",
+      "weight": 6,
+      "role": "confirmation",
+      "enabled": true,
+      "timeout_sec": 20
+    },
+    {
+      "name": "SEC",
+      "kind": "rss",
+      "url": "https://www.sec.gov/news/pressreleases.rss",
+      "language": "en",
+      "weight": 6,
+      "role": "confirmation",
+      "enabled": true,
+      "timeout_sec": 20
+    },
+    {
+      "name": "Treasury",
+      "kind": "treasury_press_html",
+      "url": "https://home.treasury.gov/news/press-releases",
+      "language": "en",
+      "weight": 5,
+      "role": "confirmation",
+      "enabled": true,
+      "timeout_sec": 25
+    },
+    {
+      "name": "SoSoValue ETF Flows",
+      "kind": "sosovalue_etf_summary",
+      "url": "https://openapi.sosovalue.com/openapi/v1/etfs/summary-history",
+      "language": "en",
+      "weight": 7,
+      "role": "confirmation",
+      "enabled": true,
+      "timeout_sec": 20,
+      "required_env": "SOSOVALUE_API_KEY"
+    }
+  ],
   "exclude_symbols": [
     "USDT",
     "USDC",

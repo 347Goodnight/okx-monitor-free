@@ -48,38 +48,41 @@ async function sendFeishuAlert(webhook, payload) {
 }
 
 function buildFeishuPayload(body) {
-  const title = body.title || "📊 OKX 合约市值榜观察";
+  const title = body.title || "OKX 合约市值观察";
   const content = [];
 
-  content.push(paragraph(body.headline || "今日趋势分析：🧭 主流币分化明显，先看方向确认。"));
+  content.push(paragraph(body.headline || "今日趋势分析：先看 BTC 是否确认方向。"));
   if (body.summary) {
-    content.push(paragraph(`🌡️ ${body.summary}`));
+    content.push(paragraph(`市场情绪：${body.summary}`));
   }
   if (body.external_sentiment) {
-    content.push(paragraph(`🔎 ${body.external_sentiment}`));
+    content.push(paragraph(`外部情绪：${body.external_sentiment}`));
   }
-  content.push(paragraph(`🕒 观察周期：${body.interval_label || "15 分钟"}`));
+  content.push(paragraph(`观察周期：${body.interval_label || "15 分钟"}`));
 
-  content.push(paragraph("📰 消息面快照"));
+  content.push(paragraph("消息面主驱动"));
   if (body.news_summary) {
     content.push(paragraph(body.news_summary));
   }
-
-  const news = Array.isArray(body.news) ? body.news : [];
-  if (news.length) {
-    for (const headline of news) {
-      content.push(paragraph(`• ${headline}`));
-    }
-  } else {
-    content.push(paragraph("• 暂未捕捉到明确的全市场驱动事件。"));
+  if (body.news_source_status) {
+    content.push(paragraph(body.news_source_status));
   }
 
-  content.push(paragraph("🏁 TOP 10 市值榜（OKX 永续）"));
+  const marketDrivers = Array.isArray(body.market_drivers) ? body.market_drivers : [];
+  if (marketDrivers.length) {
+    for (const driver of marketDrivers) {
+      content.push(paragraph(`[${driver.theme}/${driver.source}] ${driver.impact}`));
+      content.push(paragraph(`原始快讯：${driver.headline}`));
+    }
+  } else {
+    content.push(paragraph("暂无明确的宏观、政策或资金面主驱动，当前以盘面优先。"));
+  }
 
+  content.push(paragraph("TOP 市值观察（OKX 永续）"));
   const rankings = Array.isArray(body.rankings) ? body.rankings : [];
   for (const item of rankings) {
-    content.push(paragraph(`🔹 ${item.position}. ${item.symbol}`));
-    content.push(paragraph(`最新价🔥：${formatPrice(item.latest_price)}`));
+    content.push(paragraph(`${item.position}. ${item.symbol}`));
+    content.push(paragraph(`最新价：${formatPrice(item.latest_price)}`));
     content.push(paragraph(`15分钟：${signedPct(item.change_15m_pct)}`));
     content.push(paragraph(`1小时：${signedPct(item.change_1h_pct)}`));
     content.push(paragraph(`今日涨跌：${signedPct(item.change_24h_pct)}`));
@@ -90,15 +93,15 @@ function buildFeishuPayload(body) {
 
   const flags = Array.isArray(body.flags) ? body.flags : [];
   if (flags.length) {
-    content.push(paragraph("⚠️ 风险提示"));
+    content.push(paragraph("风险提示"));
     for (const flag of flags) {
-      content.push(paragraph(`• ${flag}`));
+      content.push(paragraph(`- ${flag}`));
     }
   }
 
   content.push(
     paragraph(
-      `⏰ ${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`
+      `更新时间：${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`
     )
   );
 
