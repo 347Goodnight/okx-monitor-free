@@ -1440,13 +1440,14 @@ def build_market_digest(
         "headline": trend,
         "summary": f"{sentiment['label']} ({sentiment['score']}/100)",
         "external_sentiment": f"{external_sentiment_label} ({fear_greed_score}/100)，{explain_fear_greed(fear_greed_score)}",
+        "scan_interval_label": "15 分钟轮询",
+        "analysis_framework": "15m 快照 + 1h/24h/7d/30d 对照",
         "news_summary": news_summary,
         "news_source_status": news_source_status,
         "market_drivers": market_drivers,
         "rankings": reports,
         "flags": flags[:8],
         "news": selected_headlines,
-        "interval_label": "15 分钟",
     }
 
 
@@ -1495,7 +1496,8 @@ def write_summary(
         f"- 综合市场情绪：**{sentiment['label']}** ({sentiment['score']}/100)",
         f"- 外部情绪温度：{digest['external_sentiment']}",
         f"- 榜单范围：**TOP {len(reports)} 市值币（OKX 永续）**",
-        f"- 观察周期：**{digest['interval_label']}**",
+        f"- 更新频率：**{digest['scan_interval_label']}**",
+        f"- 分析框架：**{digest['analysis_framework']}**",
         "",
         f"## 今日趋势分析：{digest['headline']}",
         "",

@@ -130,7 +130,10 @@ function buildFeishuPayload(body) {
   if (externalSentiment) {
     content.push(paragraph(`外部情绪：${externalSentiment}`));
   }
-  content.push(paragraph(`观察周期：${body.interval_label || "15 分钟"}`));
+  const scanInterval = body.scan_interval_label || body.interval_label || "15 分钟轮询";
+  const analysisFramework = body.analysis_framework || "15m 快照 + 1h/24h/7d/30d 对照";
+  content.push(paragraph(`更新频率：${scanInterval}`));
+  content.push(paragraph(`分析框架：${analysisFramework}`));
 
   content.push(paragraph("【消息面主驱动】"));
   if (newsSummary) {
