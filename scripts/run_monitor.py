@@ -1436,7 +1436,7 @@ def build_market_digest(
     external_sentiment_label = translate_fear_greed_label(fear_greed_label)
 
     return {
-        "title": "OKX 合约市值观察",
+        "title": "📡 OKX 主流合约联动雷达",
         "headline": trend,
         "summary": f"{sentiment['label']} ({sentiment['score']}/100)",
         "external_sentiment": f"{external_sentiment_label} ({fear_greed_score}/100)，{explain_fear_greed(fear_greed_score)}",

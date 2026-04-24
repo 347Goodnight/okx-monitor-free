@@ -115,7 +115,7 @@ async function sendFeishuAlert(webhook, payload) {
 }
 
 function buildFeishuPayload(body) {
-  const title = body.title || "OKX 合约市值观察";
+  const title = body.title || "📡 OKX 主流合约联动雷达";
   const content = [];
   const headline = stripPrefix(body.headline, ["今日趋势分析："]);
   const summary = stripPrefix(body.summary, ["综合市场情绪："]);
@@ -123,24 +123,24 @@ function buildFeishuPayload(body) {
   const newsSummary = stripPrefix(body.news_summary, ["消息面判断："]);
   const newsSourceStatus = stripPrefix(body.news_source_status, ["消息源状态：", "源状态："]);
 
-  content.push(paragraph(`趋势判断：${headline || "先看 BTC 是否确认方向。"}`));
+  content.push(paragraph(`🧭 趋势判断：${headline || "先看 BTC 是否确认方向。"}`));
   if (summary) {
-    content.push(paragraph(`市场情绪：${summary}`));
+    content.push(paragraph(`🌡️ 市场情绪：${summary}`));
   }
   if (externalSentiment) {
-    content.push(paragraph(`外部情绪：${externalSentiment}`));
+    content.push(paragraph(`🌍 外部情绪：${externalSentiment}`));
   }
   const scanInterval = body.scan_interval_label || body.interval_label || "15 分钟轮询";
   const analysisFramework = body.analysis_framework || "15m 快照 + 1h/24h/7d/30d 对照";
-  content.push(paragraph(`更新频率：${scanInterval}`));
-  content.push(paragraph(`分析框架：${analysisFramework}`));
+  content.push(paragraph(`⏱️ 更新频率：${scanInterval}`));
+  content.push(paragraph(`🧩 分析框架：${analysisFramework}`));
 
-  content.push(paragraph("【消息面主驱动】"));
+  content.push(paragraph("📰 消息面主驱动"));
   if (newsSummary) {
     content.push(paragraph(`判断：${newsSummary}`));
   }
   if (shouldShowSourceStatus(newsSourceStatus)) {
-    content.push(paragraph(`源状态：${newsSourceStatus}`));
+    content.push(paragraph(`ℹ️ 源状态：${newsSourceStatus}`));
   }
 
   const marketDrivers = Array.isArray(body.market_drivers) ? body.market_drivers : [];
@@ -154,10 +154,10 @@ function buildFeishuPayload(body) {
     content.push(paragraph("暂无明确的宏观、政策或资金面主驱动，当前以盘面优先。"));
   }
 
-  content.push(paragraph("【TOP 市值观察（OKX 永续）】"));
+  content.push(paragraph("📊 TOP 市值观察（OKX 永续）"));
   const rankings = Array.isArray(body.rankings) ? body.rankings : [];
   if (rankings.length) {
-    content.push(paragraph(summarizeBreadth(rankings)));
+    content.push(paragraph(`🧱 ${summarizeBreadth(rankings)}`));
   }
   for (const item of rankings) {
     content.push(paragraph(compactRankingLine(item)));
@@ -165,7 +165,7 @@ function buildFeishuPayload(body) {
 
   const flags = Array.isArray(body.flags) ? body.flags : [];
   if (flags.length) {
-    content.push(paragraph("【风险提示】"));
+    content.push(paragraph("⚠️ 风险提示"));
     for (const flag of flags.slice(0, 5)) {
       content.push(paragraph(`- ${flag}`));
     }
@@ -173,7 +173,7 @@ function buildFeishuPayload(body) {
 
   content.push(
     paragraph(
-      `更新时间：${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`
+      `🕒 更新时间：${new Date().toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })}`
     )
   );
 
