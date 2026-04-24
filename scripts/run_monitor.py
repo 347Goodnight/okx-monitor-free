@@ -1268,17 +1268,19 @@ def format_news_source_status(status: dict) -> str:
     deduped_items = int(status.get("deduped_items", 0))
 
     if not healthy_sources:
-        return "消息源状态：全部源不可用，已自动降级为纯盘面判断。"
+        return "全部源不可用，已自动降级为纯盘面判断。"
 
     parts = [
-        f"消息源状态：可用 {len(healthy_sources)}/{configured}",
-        f"当前纳入 {'、'.join(healthy_sources)}",
-        f"去重后保留 {deduped_items} 条候选",
+        f"{len(healthy_sources)}/{configured} 可用",
+        f"候选 {deduped_items} 条",
     ]
     if skipped_sources:
-        parts.append(f"跳过 {'、'.join(skipped_sources)}")
+        skipped_text = "、".join(
+            item.replace("(missing ", "（缺少 ").replace(")", "）") for item in skipped_sources
+        )
+        parts.append(f"跳过 {skipped_text}")
     if failed_sources:
-        parts.append(f"降级跳过 {', '.join(failed_sources)}")
+        parts.append(f"降级跳过 {'、'.join(failed_sources)}")
     return "，".join(parts) + "。"
 
 
@@ -1439,12 +1441,9 @@ def build_market_digest(
 
     return {
         "title": "OKX 合约市值观察",
-        "headline": f"今日趋势分析：{trend}",
-        "summary": f"综合市场情绪：{sentiment['label']} ({sentiment['score']}/100)",
-        "external_sentiment": (
-            f"外部情绪温度：{external_sentiment_label} ({fear_greed_score}/100)，"
-            f"{explain_fear_greed(fear_greed_score)}"
-        ),
+        "headline": trend,
+        "summary": f"{sentiment['label']} ({sentiment['score']}/100)",
+        "external_sentiment": f"{external_sentiment_label} ({fear_greed_score}/100)，{explain_fear_greed(fear_greed_score)}",
         "news_summary": news_summary,
         "news_source_status": news_source_status,
         "market_drivers": market_drivers,
@@ -1498,11 +1497,11 @@ def write_summary(
         "# OKX Futures Market Cap Digest",
         "",
         f"- 综合市场情绪：**{sentiment['label']}** ({sentiment['score']}/100)",
-        f"- {digest['external_sentiment']}",
+        f"- 外部情绪温度：{digest['external_sentiment']}",
         f"- 榜单范围：**TOP {len(reports)} 市值币（OKX 永续）**",
         f"- 观察周期：**{digest['interval_label']}**",
         "",
-        f"## {digest['headline']}",
+        f"## 今日趋势分析：{digest['headline']}",
         "",
     ]
 
@@ -1511,7 +1510,7 @@ def write_summary(
         if digest["news_summary"]:
             lines.append(f"- {digest['news_summary']}")
         if digest.get("news_source_status"):
-            lines.append(f"- {digest['news_source_status']}")
+            lines.append(f"- 消息源状态：{digest['news_source_status']}")
         for driver in digest["market_drivers"]:
             lines.append(
                 f"- [{driver['theme']}/{driver['source']}] {driver['impact']} 原始快讯：{driver['headline']}"
