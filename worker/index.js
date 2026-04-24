@@ -83,6 +83,20 @@ function summarizeBreadth(rankings) {
   return `结构：偏多 ${bullish} | 偏空 ${bearish} | 观察 ${neutral}`;
 }
 
+function shouldShowSourceStatus(text) {
+  if (typeof text !== "string" || !text.trim()) {
+    return false;
+  }
+  if (text.includes("全部源不可用") || text.includes("降级跳过")) {
+    return true;
+  }
+  const match = text.match(/(\d+)\s*\/\s*(\d+)\s*可用/);
+  if (!match) {
+    return false;
+  }
+  return Number(match[1]) < Number(match[2]);
+}
+
 async function sendFeishuAlert(webhook, payload) {
   const response = await fetch(webhook, {
     method: "POST",
@@ -122,7 +136,7 @@ function buildFeishuPayload(body) {
   if (newsSummary) {
     content.push(paragraph(`判断：${newsSummary}`));
   }
-  if (newsSourceStatus) {
+  if (shouldShowSourceStatus(newsSourceStatus)) {
     content.push(paragraph(`源状态：${newsSourceStatus}`));
   }
 
@@ -130,8 +144,8 @@ function buildFeishuPayload(body) {
   if (marketDrivers.length) {
     for (const [index, driver] of marketDrivers.entries()) {
       const tag = `${driver.theme} | ${sourceLabel(driver.source)} | ${driver.direction || "中性"}`;
-      content.push(paragraph(`${index + 1}. [${tag}] ${driver.impact}`));
-      content.push(paragraph(`快讯：${truncateText(driver.headline, 96)}`));
+      content.push(paragraph(`${index + 1}. [${tag}] ${truncateText(driver.headline, 72)}`));
+      content.push(paragraph(`影响：${driver.impact}`));
     }
   } else {
     content.push(paragraph("暂无明确的宏观、政策或资金面主驱动，当前以盘面优先。"));

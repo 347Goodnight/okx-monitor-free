@@ -1266,19 +1266,15 @@ def format_news_source_status(status: dict) -> str:
     failed_sources = status.get("failed_sources", [])
     skipped_sources = status.get("skipped_sources", [])
     deduped_items = int(status.get("deduped_items", 0))
+    active_configured = max(configured - len(skipped_sources), len(healthy_sources) + len(failed_sources))
 
     if not healthy_sources:
         return "全部源不可用，已自动降级为纯盘面判断。"
 
     parts = [
-        f"{len(healthy_sources)}/{configured} 可用",
+        f"{len(healthy_sources)}/{active_configured} 可用",
         f"候选 {deduped_items} 条",
     ]
-    if skipped_sources:
-        skipped_text = "、".join(
-            item.replace("(missing ", "（缺少 ").replace(")", "）") for item in skipped_sources
-        )
-        parts.append(f"跳过 {skipped_text}")
     if failed_sources:
         parts.append(f"降级跳过 {'、'.join(failed_sources)}")
     return "，".join(parts) + "。"
